@@ -187,6 +187,10 @@ Each folder must exist in Nextcloud beforehand. Add folder names to the `$allowe
 - Apache 2.4 / PHP 8.1
 - Ubuntu 22.04
 
+## Acknowledgements
+
+Built with the help of [Claude](https://claude.ai) (Anthropic).
+
 ## License
 
 MIT
