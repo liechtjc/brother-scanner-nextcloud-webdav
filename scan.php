@@ -10,11 +10,19 @@
  * See README.md for full installation instructions.
  */
 
-// Add your allowed Nextcloud destination folders here
-$allowed = ['scans', 'accounting', 'hr', 'legal'];
+// Set to true to enable debug logging to /tmp/brother_debug.log
+$debug = false;
+$logfile = '/tmp/brother_debug.log';
+
+function log_debug($logfile, $debug, $msg) {
+    if ($debug) file_put_contents($logfile, date('H:i:s') . " $msg\n", FILE_APPEND);
+}
 
 // Your Nextcloud base URL
 $nextcloud_url = 'https://your-nextcloud.com';
+
+// Add your allowed Nextcloud destination folders here
+$allowed = ['scans', 'accounting', 'hr', 'legal'];
 
 // Parse folder and subpath from query string
 // Brother appends filename as: ?folder=scans/filename.pdf
@@ -22,6 +30,9 @@ $raw = $_GET['folder'] ?? 'scans';
 $parts = explode('/', $raw, 2);
 $folder = $parts[0];
 $subpath = isset($parts[1]) ? $parts[1] : '';
+$headers = getallheaders();
+
+log_debug($logfile, $debug, "METHOD={$_SERVER['REQUEST_METHOD']} folder=$folder subpath=$subpath");
 
 // Validate folder
 if (!in_array($folder, $allowed)) {
@@ -37,14 +48,16 @@ $auth = $_SERVER['HTTP_AUTHORIZATION']
 
 // Second PUT carries If: <lock-token> header instead of Authorization
 // This is the real scan data PUT - allow it through
-$headers = getallheaders();
 $hasLockToken = isset($headers['If']) && strpos($headers['If'], 'brother-lock-token') !== false;
 
 if (!$auth && !$hasLockToken) {
+    log_debug($logfile, $debug, "NO AUTH - sending 401");
     header('WWW-Authenticate: Basic realm="Brother Scanner"');
     http_response_code(401);
     exit();
 }
+
+log_debug($logfile, $debug, "AUTH=present hasLockToken=$hasLockToken");
 
 // --- Request handlers ---
 
@@ -59,10 +72,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     $tmpfile = tempnam(sys_get_temp_dir(), 'brother_');
     $in = fopen('php://input', 'rb');
     $out = fopen($tmpfile, 'wb');
-    stream_copy_to_stream($in, $out);
+    $bytes = stream_copy_to_stream($in, $out);
     fclose($in);
     fclose($out);
     $filesize = filesize($tmpfile);
+
+    log_debug($logfile, $debug, "PUT bytes=$bytes filesize=$filesize");
 
     // First PUT is always empty (Brother reserves the filename before locking)
     // Just acknowledge it and wait for the real PUT after LOCK
@@ -90,6 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     curl_close($ch);
     fclose($fh);
     unlink($tmpfile);
+
+    log_debug($logfile, $debug, "CURL httpcode=$httpcode");
     http_response_code($httpcode);
 
 } elseif ($_SERVER['REQUEST_METHOD'] === 'PROPFIND') {
